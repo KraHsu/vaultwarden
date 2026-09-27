@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up personal Vaultwarden
+RequiresMountsFor=/mnt/storage/vaultwarden
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /mnt/storage/vaultwarden/backup.py

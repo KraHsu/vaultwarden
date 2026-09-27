@@ -1,0 +1,9 @@
+/mnt/storage/vaultwarden/data/vaultwarden.log {
+    daily
+    rotate 7
+    size 5M
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

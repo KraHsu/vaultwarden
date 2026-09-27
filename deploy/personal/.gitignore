@@ -1,0 +1,6 @@
+vaultwarden.env
+data/
+web/
+backups/
+*.pem
+*.key

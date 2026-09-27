@@ -1,3 +1,12 @@
+# 密匣 · Personal Vue frontend fork
+
+This public fork adds a Vue 3 personal password-manager frontend while retaining
+the upstream Vaultwarden backend. See [personal-web](personal-web/README.md) for
+features, cryptography, tests and limitations, and [deployment](deploy/personal/README.md)
+for installation on a data disk and backup/recovery instructions.
+
+---
+
 ![Vaultwarden Logo](./resources/vaultwarden-logo-auto.svg)
 
 An alternative server implementation of the Bitwarden Client API, written in Rust and compatible with [official Bitwarden clients](https://bitwarden.com/download/) [[disclaimer](#disclaimer)], perfect for self-hosted deployment where running the official resource-heavy service might not be ideal.

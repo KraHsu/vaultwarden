@@ -1,0 +1,31 @@
+name: personal-vault
+services:
+  vaultwarden:
+    image: vaultwarden/server:1.37.3@sha256:1587c45feaa479f1f5e8af3b00eded36bff77bcf1880cf8dbf0541706dd470e0
+    container_name: personal-vaultwarden
+    restart: unless-stopped
+    env_file: vaultwarden.env
+    ports:
+      - "127.0.0.1:8222:80"
+    volumes:
+      - type: bind
+        source: /mnt/storage/vaultwarden/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /mnt/storage/vaultwarden/web
+        target: /web-vault
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: none
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

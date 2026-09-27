@@ -1,0 +1,17 @@
+[Unit]
+Description=Personal Vaultwarden on the data disk
+Requires=docker.service
+After=docker.service network-online.target
+RequiresMountsFor=/mnt/storage/vaultwarden
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/mnt/storage/vaultwarden
+ExecStartPre=/usr/bin/mountpoint -q /mnt/storage
+ExecStart=/usr/bin/docker compose up -d --wait --wait-timeout 120
+ExecStop=/usr/bin/docker compose stop
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target
