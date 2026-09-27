@@ -74,3 +74,9 @@ Vue DOM interaction and browser-WASM module tests were run locally.
 Deployment and recovery: [../deploy/personal/README.md](../deploy/personal/README.md).
 The frontend is AGPL-3.0-only; the upstream license remains unchanged. The bundled
 font's license is included in `public/font-license.txt`.
+
+## 归一统一登录
+
+新增原生 Vaultwarden OIDC 登录入口，使用 S256 PKCE、随机 state 和发行者校验；授权响应为一次性消费，超时 10 分钟。临时 verifier/state 放在 sessionStorage，访问令牌、刷新令牌和用户密钥只在内存中。身份验证后仍需主密码在浏览器中解密，主密码不会发送给 IAM。原邮箱、主密码、TOTP 登录路径保留。已有独立二步验证的账号可使用该原密码路径或官方 Bitwarden 客户端；Vue SSO 路径尚未支持独立二步验证。
+
+SSO 回调 `/sso-connector.html` 将短期授权参数移到 URL fragment 后返回 Vue。等待解锁的内存会话 5 分钟后清除。生产端需要明确配置 `SSO_*` 环境及自己的受信任 OIDC 提供方；客户端不包含任何服务端密钥。

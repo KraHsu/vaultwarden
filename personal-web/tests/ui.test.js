@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import {vi,describe,it,expect,beforeEach,afterEach} from 'vitest';
 import {mount,flushPromises} from '@vue/test-utils';
-vi.mock('../src/api',()=>({login:vi.fn(),sync:vi.fn(),save:vi.fn(),register:vi.fn(),trash:vi.fn(),restore:vi.fn(),clearSession:vi.fn()}));
+vi.mock('../src/api',()=>({startSSO:vi.fn(),finishSSO:vi.fn(),unlockSSO:vi.fn(),login:vi.fn(),sync:vi.fn(),save:vi.fn(),register:vi.fn(),trash:vi.fn(),restore:vi.fn(),clearSession:vi.fn()}));
 vi.mock('../src/sdk',()=>({loadCrypto:vi.fn()}));
 import * as api from '../src/api';
 import App from '../src/App.vue';

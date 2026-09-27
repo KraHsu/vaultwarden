@@ -9,6 +9,7 @@ function applyTheme(){document.documentElement.dataset.theme=theme.value;localSt
 function toggleTheme(){theme.value=theme.value==='dark'?'light':'dark';applyTheme();}
 applyTheme();
 const unlocked=ref(false), email=ref(''), password=ref(''), confirmation=ref(''), otp=ref('');
+const ssoReady=ref(false);
 const mode=ref('login'), twoFactor=ref(false), busy=ref(false), error=ref(''), notice=ref('');
 const items=ref([]), unreadable=ref(0), query=ref(''), category=ref('all'), selectedId=ref(null);
 const editPasswordVisible=ref(false);
@@ -25,7 +26,7 @@ const visible=computed(()=>items.value.filter(item=>{
 }).sort((a,b)=>a.name.localeCompare(b.name,'zh-CN')));
 const selected=computed(()=>items.value.find(i=>i.id===selectedId.value));
 function toast(message){notice.value=message;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>notice.value='',3500);}
-function setMode(value){mode.value=value;error.value='';password.value='';confirmation.value='';otp.value='';twoFactor.value=false;}
+function setMode(value){ssoReady.value=false;api.clearSession();mode.value=value;error.value='';password.value='';confirmation.value='';otp.value='';twoFactor.value=false;}
 function install(result){items.value=result.items;unreadable.value=result.unreadable;}
 async function submitAuth(){
   error.value='';busy.value=true;
@@ -37,7 +38,8 @@ async function submitAuth(){
       // Registration is complete even if the following login fails.
       mode.value='login';confirmation.value='';toast('密码库已创建，正在登录。');
     }
-    install(await api.login(email.value,password.value,otp.value));
+    install(ssoReady.value ? await api.unlockSSO(password.value) : await api.login(email.value,password.value,otp.value));
+    ssoReady.value=false;
     unlocked.value=true;password.value='';confirmation.value='';otp.value='';twoFactor.value=false;resetIdle();
   } catch(e) {
     if(e.providers?.map(String).includes('0')) {twoFactor.value=true;error.value='请输入验证器中的六位验证码。';}
@@ -45,9 +47,11 @@ async function submitAuth(){
     else error.value=e.message;
   } finally {busy.value=false;}
 }
-function lock(){api.clearSession();items.value=[];Object.assign(draft,{name:'',username:'',password:'',uris:'',notes:''});password.value='';location.reload();}
+function lock(){ssoReady.value=false;api.clearSession();items.value=[];Object.assign(draft,{name:'',username:'',password:'',uris:'',notes:''});password.value='';location.reload();}
 function resetIdle(){if(!unlocked.value)return;clearTimeout(idleTimer);idleTimer=setTimeout(lock,5*60*1000);}
 function visibility(){if(document.hidden) hiddenAt=Date.now();else if(unlocked.value&&hiddenAt&&Date.now()-hiddenAt>60000)lock();}
+async function startSSO(){busy.value=true;error.value='';try{await api.startSSO();}catch(e){error.value=e.message;busy.value=false;}}
+onMounted(async()=>{busy.value=true;try{const result=await api.finishSSO();if(result){email.value=result.email;ssoReady.value=true;}}catch(e){error.value=e.message;}finally{busy.value=false;}});
 onMounted(()=>{for(const event of ['pointerdown','keydown','touchstart'])window.addEventListener(event,resetIdle,{passive:true});document.addEventListener('visibilitychange',visibility);window.addEventListener('pagehide',api.clearSession);});
 onUnmounted(()=>{clearTimeout(idleTimer);clearTimeout(noticeTimer);for(const event of ['pointerdown','keydown','touchstart'])window.removeEventListener(event,resetIdle);document.removeEventListener('visibilitychange',visibility);window.removeEventListener('pagehide',api.clearSession);});
 async function refresh(){busy.value=true;error.value='';try{install(await api.sync());toast('已同步');}catch(e){error.value=e.message;}finally{busy.value=false;}}
@@ -84,16 +88,18 @@ function safeLink(url){try{const parsed=new URL(url);return ['https:','http:'].i
       </section>
       <section class="auth-panel" aria-labelledby="auth-title">
         <p class="eyebrow">{{mode==='register'?'FIRST VISIT':'YOUR PRIVATE VAULT'}}</p>
-        <h2 id="auth-title">{{mode==='register'?'开启你的密码库':'欢迎回来'}}</h2>
-        <p class="muted auth-subtitle">{{mode==='register'?'仅限已获邀请的邮箱。主密码由你保管。':'输入主密码，打开你的私藏。'}}</p>
+        <h2 id="auth-title">{{mode==='register'?'开启你的密码库':ssoReady?'身份已验证':'欢迎回来'}}</h2>
+        <p class="muted auth-subtitle">{{mode==='register'?'仅限已获邀请的邮箱。主密码由你保管。':ssoReady?'输入主密码，在此设备上解密密码库。':'输入主密码，打开你的私藏。'}}</p>
         <form @submit.prevent="submitAuth">
-          <label>邮箱<input v-model="email" type="email" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com" :disabled="busy"></label>
+          <label>邮箱<input v-model="email" type="email" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@example.com" :disabled="busy || ssoReady"></label>
           <label>主密码<input v-model="password" type="password" required :minlength="mode==='register'?14:1" :autocomplete="mode==='register'?'new-password':'current-password'" placeholder="输入你的主密码" :disabled="busy"></label>
           <label v-if="mode==='register'">再输入一次<input v-model="confirmation" type="password" required minlength="14" autocomplete="new-password" placeholder="确认主密码" :disabled="busy"></label>
           <label v-if="twoFactor">验证码<input v-model="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" maxlength="6" placeholder="六位验证码" :disabled="busy"></label>
           <p v-if="error" class="error" role="alert">{{error}}</p>
           <button class="primary auth-submit" :disabled="busy">{{busy?'正在处理…':mode==='register'?'创建密码库 →':'解锁密码库 →'}}</button>
         </form>
+        <button v-if="mode==='login' && !ssoReady" type="button" class="secondary auth-submit" :disabled="busy" @click="startSSO">通过归一登录 ↗</button>
+        <p v-if="ssoReady" class="small-note">主密码仅用于浏览器内解密，不会发送给 IAM。 <button type="button" class="text-button" @click="setMode('login')">重新登录</button></p>
         <p class="auth-switch">{{mode==='register'?'已经设置过主密码？':'第一次来到这里？'}} <button @click="setMode(mode==='register'?'login':'register')" :disabled="busy">{{mode==='register'?'返回登录':'激活账号'}}</button></p>
         <p v-if="mode==='register'" class="small-note">请妥善保存主密码。服务器无法替你找回。</p>
       </section>

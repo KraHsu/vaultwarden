@@ -1,8 +1,10 @@
 import { loadCrypto } from './sdk';
+import { authorizationURL, consumeCallback } from './sso';
 import { authenticationHash, normalizeEmail, parseKdf, registrationPayload, decryptItem, encryptItem } from './crypto';
 // Session tokens and decrypted keys are memory-only. A page reload is a full lock.
 let accessToken, refreshToken, expires=0, userKey, userId, sdk;
 let refreshPromise;
+let pendingUnlock, pendingTimer;
 const deviceIdentifier=crypto.randomUUID();
 async function request(path, options={}) {
   const response=await fetch(path, {cache:'no-store',credentials:'omit',...options,
@@ -59,4 +61,39 @@ export async function save(draft,original) {
 }
 export async function trash(id) {await authRequest(`/api/ciphers/${encodeURIComponent(id)}/delete`,{method:'PUT'});}
 export async function restore(id) {await authRequest(`/api/ciphers/${encodeURIComponent(id)}/restore`,{method:'PUT'});}
-export function clearSession() {userKey?.fill(0);userKey=null; accessToken=null; refreshToken=null;}
+export function clearSession() {clearTimeout(pendingTimer);pendingUnlock=null;userKey?.fill(0);userKey=null; accessToken=null; refreshToken=null;expires=0;}
+export async function startSSO() {
+  clearSession();location.assign(await authorizationURL(location.origin));
+}
+export async function finishSSO() {
+  if(!location.hash.startsWith('#sso?'))return null;
+  const params=new URLSearchParams(location.hash.slice(5));
+  history.replaceState(null,'',location.pathname);
+  clearSession();
+  const flow=consumeCallback(params,location.origin);
+  try {
+    const body=new URLSearchParams({grant_type:'authorization_code',client_id:'web',scope:'api offline_access',deviceType:'10',deviceIdentifier,deviceName:'密匣 · Vue',...flow});
+    const result=await request('/identity/connect/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    acceptToken(result);
+    const profile=await authRequest('/api/accounts/profile');
+    const key=result.Key || result.key;
+    if(!key)throw new Error('请先使用邮箱和主密码激活密码库，再接入统一登录。');
+    pendingUnlock={key,email:normalizeEmail(profile.email),kdf:parseKdf(result)};
+    pendingTimer=setTimeout(clearSession,300000);
+    return {email:pendingUnlock.email};
+  } catch(error) {
+    clearSession();
+    if(error.providers)throw new Error('密码库启用了独立二步验证，请使用邮箱、主密码和验证码登录，或使用 Bitwarden 客户端。');
+    throw error;
+  }
+}
+export async function unlockSSO(password) {
+  if(!pendingUnlock || !accessToken)throw new Error('解锁等待已超时，请重新通过归一登录。');
+  sdk=await loadCrypto();
+  let nextKey;
+  try{nextKey=sdk.decrypt_user_key_with_master_password(pendingUnlock.key,password,pendingUnlock.email,pendingUnlock.kdf);}
+  catch{throw new Error('主密码不正确，无法解密密码库。');}
+  userKey?.fill(0);userKey=nextKey;
+  clearTimeout(pendingTimer);pendingUnlock=null;
+  return sync();
+}
