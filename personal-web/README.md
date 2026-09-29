@@ -8,6 +8,12 @@ owner's blog and timetable. All fonts and assets are served locally.
 
 - Invite-only account activation; password login; authenticator TOTP login.
 - Login entries and secure notes: create, edit, search, favorite and copy.
+- Key and certificate templates: API tokens / SSH or PEM keys, optional public
+  keys, certificate chains, accompanying private keys and passphrases. Sensitive
+  fields start hidden. Filter entries by type, copy values or download text files.
+- Local UTF-8 / PEM text import, up to 256 KiB per field. Imported content keeps
+  its original whitespace, line endings and UTF-8 BOM until edited. Binary DER,
+  P12 and PFX files must be converted to PEM before import.
 - Recoverable trash and restore. No permanent-delete action in this UI.
 - Cryptographically random 24-character password generation.
 - Memory-only session and encryption keys; reload locks the vault. Idle timeout
@@ -40,6 +46,14 @@ Use official clients where supported; the stock web vault is available in the
 upstream image but is not mounted as the public frontend in this deployment.
 Copying a password puts it in the operating system clipboard; locking the vault
 does not promise to clear that clipboard.
+
+Key/certificate templates are ordinary type-2 secure notes with encrypted custom
+fields. The template discriminator, filenames, contents and passphrases are all
+encrypted with the existing per-item key. Sensitive fields use the hidden field
+type. Other clients see a secure note with custom fields, rather than a native
+SSH-key item. Unrelated custom fields and attachments survive edits; there is no
+database migration. Downloads are explicitly decrypted files on your device.
+This feature stores certificate text; it does not issue, renew or validate certificates.
 
 ## Development
 
@@ -74,6 +88,11 @@ Vue DOM interaction and browser-WASM module tests were run locally.
 Deployment and recovery: [../deploy/personal/README.md](../deploy/personal/README.md).
 The frontend is AGPL-3.0-only; the upstream license remains unchanged. The bundled
 font's license is included in `public/font-license.txt`.
+
+The key/certificate update passes 29 unit and Vue interaction tests. An isolated
+Vaultwarden 1.37.3 instance also passes encrypted create/edit/sync/trash/restore
+for both templates and a maximum-size payload with three 256 KiB fields. Production
+vault data is never used for these tests.
 
 ## 归一统一登录
 

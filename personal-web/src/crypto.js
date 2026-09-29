@@ -1,5 +1,6 @@
 // Encryption, key protection, KDFs and randomness use Bitwarden's pinned Rust/WASM SDK.
 // Only the legacy authentication hash uses standard WebCrypto PBKDF2, per Bitwarden's protocol.
+import {templates, marker, fieldName, filenameField, managedNames, templateData, validateSecrets} from './secrets.js';
 const encoder = new TextEncoder();
 export const toBase64 = bytes => btoa(Array.from(bytes, n => String.fromCharCode(n)).join(''));
 export const normalizeEmail = email => email.trim().toLowerCase();
@@ -44,27 +45,41 @@ export function decryptItem(sdk, raw, userKey) {
   const key = itemKey(sdk, raw, userKey);
   const dec = value => value == null ? '' : sdk.symmetric_decrypt_string(value, key);
   try {
+    const fields=(raw.fields || []).map(field => ({name:dec(field.name),value:dec(field.value),type:field.type}));
     return { raw, id: raw.id, type: raw.type, name: dec(raw.name), notes: dec(raw.notes),
       username: dec(raw.login?.username), password: dec(raw.login?.password),
       uris: (raw.login?.uris || []).map(uri => dec(uri.uri)),
       favorite: !!raw.favorite, deleted: !!raw.deletedDate,
-      fields: (raw.fields || []).map(field => ({name:dec(field.name),value:dec(field.value),type:field.type})),
+      fields, ...templateData(raw.type,fields),
       editable: [1,2].includes(raw.type) && !raw.organizationId
     };
   } finally { key.fill(0); }
 }
 export function encryptItem(sdk, draft, original, userKey, userId) {
+  if (!draft.name?.trim()) throw new Error('请填写名称。');
+  validateSecrets(draft.kind,draft.secrets);
   const key = original ? itemKey(sdk, original, userKey) : sdk.make_user_key_aes256_cbc_hmac();
   const enc = value => value ? sdk.symmetric_encrypt_string(value, key) : null;
   try {
     const out = original ? structuredClone(original) : {
-      type: Number(draft.type), organizationId:null, folderId:null, fields:null,
+      type: draft.kind ? (draft.kind==='login'?1:2) : Number(draft.type), organizationId:null, folderId:null, fields:null,
       key:sdk.symmetric_encrypt_bytes(key, userKey), reprompt:0,
-      secureNote:Number(draft.type) === 2 ? {type:0} : null
+      secureNote:(draft.kind ? draft.kind!=='login' : Number(draft.type)===2) ? {type:0} : null
     };
     out.encryptedFor = userId;
     out.name = enc(draft.name.trim()); out.notes = enc(draft.notes); out.favorite = !!draft.favorite;
     if (original) out.lastKnownRevisionDate = original.revisionDate;
+    if (templates[draft.kind]) {
+      if (out.type!==2) throw new Error('不能将登录信息转换为密钥或证书。');
+      const managed=managedNames(draft.kind);
+      // Preserve unrelated custom fields and all other cipher metadata verbatim.
+      out.fields=(original?.fields || []).filter(f=>!managed.has(f.name ? sdk.symmetric_decrypt_string(f.name,key) : ''));
+      out.fields.push({name:enc(marker),value:enc(draft.kind),type:0});
+      for (const spec of templates[draft.kind]) {
+        out.fields.push({name:enc(fieldName(spec)),value:enc(draft.secrets?.[spec.id]),type:1});
+        if (draft.filenames?.[spec.id]) out.fields.push({name:enc(filenameField(spec)),value:enc(draft.filenames[spec.id]),type:0});
+      }
+    }
     if (out.type === 1) {
       out.login ??= {};
       if (original?.login?.password && sdk.symmetric_decrypt_string(original.login.password, key) !== draft.password)

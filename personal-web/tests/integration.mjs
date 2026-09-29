@@ -34,6 +34,27 @@ assert((await req('/api/sync')).ciphers.find(c=>c.id===item.id).deletedDate);
 await req(`/api/ciphers/${item.id}/restore`,{method:'PUT'});
 assert(!(await req('/api/sync')).ciphers.find(c=>c.id===item.id).deletedDate);
 const renewed=await req('/identity/connect/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'refresh_token',refresh_token:auth.refresh_token,client_id:'web'})});assert(renewed.access_token);
+for (const kind of ['key','certificate']) {
+  const secretDraft={kind,name:`Integration ${kind}`,notes:'Test-only secret memo',favorite:false,
+    secrets:{content:'-----BEGIN TEST-----\r\nfixture-content==\r\n-----END TEST-----\r\n',publicKey:'test-public-key',privateKey:'test-private-key',passphrase:'test-passphrase'},filenames:{content:'test.pem'}};
+  let secret=await req('/api/ciphers',{method:'POST',body:JSON.stringify(encryptItem(sdk,secretDraft,null,key,state.profile.id))});
+  assert.equal(secret.type,2);assert(!JSON.stringify(secret).includes('test-passphrase'));
+  assert.equal(decryptItem(sdk,secret,key).secrets.content,secretDraft.secrets.content);
+  secretDraft.secrets.content+='updated\n';
+  secret=await req(`/api/ciphers/${secret.id}`,{method:'PUT',body:JSON.stringify(encryptItem(sdk,secretDraft,secret,key,state.profile.id))});
+  const synced=(await req('/api/sync')).ciphers.find(c=>c.id===secret.id);
+  assert.equal(decryptItem(sdk,synced,key).secrets.content,secretDraft.secrets.content);
+  assert.equal(decryptItem(sdk,synced,key).filenames.content,'test.pem');
+  await req(`/api/ciphers/${secret.id}/delete`,{method:'PUT'});
+  assert((await req('/api/sync')).ciphers.find(c=>c.id===secret.id).deletedDate);
+  await req(`/api/ciphers/${secret.id}/restore`,{method:'PUT'});
+  assert(!(await req('/api/sync')).ciphers.find(c=>c.id===secret.id).deletedDate);
+  console.log(`PASS: ${kind} encrypted create, edit, sync, trash and restore`);
+}
+const largeDraft={kind:'certificate',name:'Maximum-size fixture',secrets:{content:'x'.repeat(256*1024),privateKey:'y'.repeat(256*1024),passphrase:'z'.repeat(256*1024)}};
+const large=await req('/api/ciphers',{method:'POST',body:JSON.stringify(encryptItem(sdk,largeDraft,null,key,state.profile.id))});
+assert.deepEqual(decryptItem(sdk,large,key).secrets,largeDraft.secrets);
+console.log('PASS: maximum advertised 256 KiB per field survives backend encryption roundtrip');
 if(process.env.BW_TEST_CLI){
   const env={...process.env,BITWARDENCLI_APPDATA_DIR:mkdtempSync(`${tmpdir()}/vault-cli-test-`),TEST_PASSWORD:password,BW_NOINTERACTION:'true'};
   for(const key of ['HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','http_proxy','https_proxy','all_proxy']) delete env[key];

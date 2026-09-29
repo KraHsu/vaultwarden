@@ -45,4 +45,32 @@ describe('Personal vault interactions',()=>{
     await wrapper.findAll('button').find(b=>b.text()==='激活账号').trigger('click');
     await wrapper.get('input[type=email]').setValue('fixture@example.invalid');const fields=wrapper.findAll('input[type=password]');await fields[0].setValue('a long test passphrase');await fields[1].setValue('different long passphrase');await wrapper.get('form').trigger('submit');await flushPromises();expect(api.register).not.toHaveBeenCalled();expect(wrapper.text()).toContain('两次输入');
   });
+  it('creates a key with multiline content and clears the editor after save',async()=>{
+    await login();await wrapper.findAll('button').find(b=>b.text().includes('新建项目')).trigger('click');await flushPromises();
+    await wrapper.get('dialog select').setValue('key');
+    await wrapper.get('dialog input').setValue('Server key');
+    const field=wrapper.get('dialog section[aria-label="密钥内容"]');
+    expect(field.find('textarea').exists()).toBe(false);
+    await field.get('button').trigger('click');
+    await field.get('textarea').setValue('test-private-key\nsecond-line\n');
+    await wrapper.get('dialog form').trigger('submit');await flushPromises();
+    expect(api.save).toHaveBeenCalledWith(expect.objectContaining({kind:'key',name:'Server key',secrets:{content:'test-private-key\nsecond-line\n'}}),null);
+    expect(wrapper.find('dialog textarea').exists()).toBe(false);
+  });
+  it('filters certificate entries and hides their contents again when switching items',async()=>{
+    const cert={...item,id:'cert',type:2,kind:'certificate',name:'TLS certificate',username:'',uris:[],secrets:{content:'test-certificate-body',privateKey:'test-private-key-body'},filenames:{content:'site.pem'}};
+    api.login.mockResolvedValue({items:[item,cert],unreadable:0});
+    await login();await wrapper.get('.type-filter select').setValue('certificate');expect(wrapper.findAll('.item-row')).toHaveLength(1);
+    await wrapper.get('.item-row').trigger('click');expect(wrapper.text()).not.toContain(cert.secrets.privateKey);
+    const field=wrapper.get('aside section[aria-label="配套私钥"]');await field.get('button').trigger('click');
+    expect(field.get('textarea').element.value).toBe(cert.secrets.privateKey);
+    await wrapper.get('.type-filter select').setValue('login');expect(wrapper.find('aside').exists()).toBe(false);
+    await wrapper.get('.type-filter select').setValue('certificate');await wrapper.get('.item-row').trigger('click');
+    expect(wrapper.find('aside textarea').exists()).toBe(false);
+  });
+  it('does not save an empty certificate',async()=>{
+    await login();await wrapper.findAll('button').find(b=>b.text().includes('新建项目')).trigger('click');await flushPromises();
+    await wrapper.get('dialog select').setValue('certificate');await wrapper.get('dialog input').setValue('Missing cert');
+    await wrapper.get('dialog form').trigger('submit');await flushPromises();expect(api.save).not.toHaveBeenCalled();expect(wrapper.text()).toContain('请填写证书内容');
+  });
 });
